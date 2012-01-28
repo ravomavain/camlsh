@@ -1,0 +1,7 @@
+--- cl75/src/compiler/config.mlp
++++ cl75/src/compiler/config.mlp
+@@ -44,2 +44,2 @@ let default_exec_name = "camlout.exe";;
+-let toplevel_input_prompt = "#";;
+-let error_prompt = ">";;
++let toplevel_input_prompt = "\014";;
++let error_prompt = "\021>";;
