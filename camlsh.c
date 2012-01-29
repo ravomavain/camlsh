@@ -26,8 +26,8 @@
 #include <fcntl.h>
 #include <string.h>
 #include <getopt.h>
-#include <pwd.h>
-#include <limits.h>
+#include <wordexp.h>
+#include <regex.h>
 #include <sys/types.h>
 #include <readline/readline.h>
 #include <readline/history.h>
@@ -44,8 +44,8 @@ static struct option long_options[] = {
 };
 
 typedef struct list{
-   char *hd;
-   struct list *tl;
+	char *hd;
+	struct list *tl;
 } list;
 
 void error(char *s)
@@ -56,7 +56,7 @@ void error(char *s)
 
 void* xmalloc(size_t num)
 {
-	void *new = malloc(num);
+	void *new = calloc(1, num);
 	if (!new)
 		exit(1);
 	return new;
@@ -73,6 +73,13 @@ char* xstrdup(const char *str)
 {
 	if (str)
 		return strcpy(xmalloc(strlen(str) + 1), str);
+	return NULL;
+}
+
+char* xstrndup(const char *str, size_t n)
+{
+	if (str)
+		return strncpy(xmalloc(n+1), str, n);
 	return NULL;
 }
 
@@ -96,6 +103,38 @@ void usage(char **argv)
 	exit(0);
 }
 
+char *expand_first(char *filename)
+{
+	char *result;
+	wordexp_t exp_result;
+	if(0!=(wordexp(filename, &exp_result, 0)))
+		return NULL;
+	wordexp(filename, &exp_result, 0);
+	result = xstrdup(exp_result.we_wordv[0]);
+	wordfree(&exp_result);
+	return result;
+}
+
+list *expand(char *filename)
+{
+	wordexp_t exp_result;
+	list *files=NULL, *tmp=NULL;
+	int i;
+
+	if(0!=(wordexp(filename, &exp_result, 0)))
+		return NULL;
+	for (i=exp_result.we_wordc-1; i >= 0 ; i--)
+	{
+		tmp = xmalloc(sizeof(list));
+		tmp->hd = xstrdup(exp_result.we_wordv[i]);
+		tmp->tl = files;
+		files = tmp;
+	}
+	wordfree(&exp_result);
+
+	return files;
+}
+
 char *find_camlstdlib(void)
 {
 	if(access("/usr/lib/caml-light/", R_OK) == 0)
@@ -108,18 +147,15 @@ char *find_camlstdlib(void)
 char *find_camltop(void)
 {
 	char *filename;
-	struct passwd *pw;
 
 	if(access("./camltop", R_OK) == 0)
 		return "./camltop";
 
-	filename = xmalloc(sizeof(char)*PATH_MAX);
-	pw = getpwuid(getuid());
-	snprintf(filename, PATH_MAX, "%s/.camlsh/camltop", pw->pw_dir);
-
+	filename = expand_first("~/.camlsh/camltop");
 	if(access(filename, R_OK) == 0)
 		return filename;
 	xfree(filename);
+
 	if(access("/usr/lib/caml-light/camlshtop", R_OK) == 0)
 		return "/usr/lib/caml-light/camlshtop";
 	if(access("/usr/local/lib/caml-light/camlshtop", R_OK) == 0)
@@ -202,7 +238,7 @@ void camlbackend(int in[2], int out[2], int argc, char *argv[])
 			camlargv[3] = find_camlstdlib();
 		i=4;
 	}
-	
+
 	while (optind < argc)
 	{
 		camlargv[i++] = argv[optind++];
@@ -220,12 +256,16 @@ void camlfrontend(int in[2], int out[2], int argc, char *argv[])
 	int o=0, i=0, n=0, option_index=0, com=0, inlen=0, color=31;
 	char c=0;
 	char *input=NULL;
-	char *ptr=NULL;
+	char *str=NULL;
+	char *histfile=NULL;
 	char prompt[3] = "# ";
 	char *set_color=NULL, *reset_color=NULL;
 	FILE *output=NULL;
 	list *includes=NULL, *tmp=NULL;
 	FILE *inc=NULL;
+	regex_t regex;
+	size_t nmatch = 2;
+	regmatch_t pmatch[2];
 
 	/* Close unused ends of the pipes */
 	close(in[0]);
@@ -245,21 +285,13 @@ void camlfrontend(int in[2], int out[2], int argc, char *argv[])
 				break;
 			case 'o':
 				if(includes == NULL)
-				{
-					includes = xmalloc(sizeof(list));
-					includes->hd = xstrdup(optarg);
-					includes->tl = NULL;
-				}
+					includes = expand(optarg);
 				else
 				{
 					tmp = includes;
 					while(tmp->tl != NULL)
 						tmp = tmp->tl;
-					tmp->tl = xmalloc(sizeof(list));
-					tmp=tmp->tl;
-					tmp->hd = xstrdup(optarg);
-					tmp->tl = NULL;
-					tmp = NULL;
+					tmp->tl = expand(optarg);
 				}
 				break;
 			case 'n':
@@ -299,6 +331,12 @@ void camlfrontend(int in[2], int out[2], int argc, char *argv[])
 			return;
 		putchar(c);
 	}
+
+	if(0 != (regcomp(&regex, "^(\\*include \\(.*\\)\\*)$", 0)))
+		error("regcomp() failed");
+
+	histfile = expand_first("~/.camlsh/history");
+	read_history(histfile);
 	rl_bind_key ('\t', rl_insert);
 
 	for(;;)
@@ -347,6 +385,20 @@ void camlfrontend(int in[2], int out[2], int argc, char *argv[])
 		inlen = strlen(input);
 		if(inlen == 0)
 			continue;
+		if(regexec(&regex, input, nmatch, pmatch, 0)==0)
+		{
+			str = xstrndup(&input[pmatch[1].rm_so], pmatch[1].rm_eo-pmatch[1].rm_so);
+			if(includes == NULL)
+				includes = expand(str);
+			else
+			{
+				tmp = includes;
+				while(tmp->tl != NULL)
+					tmp = tmp->tl;
+				tmp->tl = expand(str);
+			}
+			xfree(str);
+		}
 
 		add_history(input);
 
@@ -391,6 +443,10 @@ void camlfrontend(int in[2], int out[2], int argc, char *argv[])
 		}
 	}
 	putchar('\n');
+	mkdir(expand_first("~/.camlsh"));
+	write_history(histfile);
+	xfree(histfile);
+	regfree(&regex);
 	close(in[1]);
 	close(out[0]);
 	return;
