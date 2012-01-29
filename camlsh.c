@@ -253,7 +253,7 @@ void camlbackend(int in[2], int out[2], int argc, char *argv[])
 
 void camlfrontend(int in[2], int out[2], int argc, char *argv[])
 {
-	int o=0, i=0, n=0, option_index=0, com=0, inlen=0, color=31;
+	int o=0, i=0, n=0, option_index=0, com=0, sqt=0, dqt=0, inlen=0, color=31;
 	char c=0;
 	char *input=NULL;
 	char *str=NULL;
@@ -409,19 +409,29 @@ void camlfrontend(int in[2], int out[2], int argc, char *argv[])
 		n=0;
 		for(i=0;i<inlen-1;i++)
 		{
-			if(input[i] == '(' && input[i+1] == '*')
+			if(!sqt && !com && input[i] == '"' && (i==0 || input[i-1]!='\\'))
+			{
+				dqt ^= 1;
+				continue;
+			}
+			if(!dqt && !com && input[i] == '\'' && (i==0 || input[i-1]!='\\'))
+			{
+				sqt ^= 1;
+				continue;
+			}
+			if(!dqt && !sqt && input[i] == '(' && input[i+1] == '*')
 			{
 				com++;
 				i++;
 				continue;
 			}
-			if(input[i] == '*' && input[i+1] == ')' && com)
+			if(!dqt && !sqt && input[i] == '*' && input[i+1] == ')' && com)
 			{
 				com--;
 				i++;
 				continue;
 			}
-			if(!com && input[i] == ';' && input[i+1] == ';')
+			if(!dqt && !sqt && !com && input[i] == ';' && input[i+1] == ';')
 			{
 				n++;
 				i++;
