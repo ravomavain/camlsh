@@ -439,6 +439,10 @@ void camlfrontend(int in[2], int out[2], int argc, char *argv[])
 					prompt[0]='#';
 			}
 		}
+		if(!sqt && !com && input[i] == '"' && (i==0 || input[i-1]!='\\'))
+			dqt ^= 1;
+		if(!dqt && !com && input[i] == '\'' && (i==0 || input[i-1]!='\\'))
+			sqt ^= 1;
 		while(n>0)
 		{
 			c = getc(output);
