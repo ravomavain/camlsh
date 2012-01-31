@@ -384,7 +384,10 @@ void camlfrontend(int in[2], int out[2], int argc, char *argv[])
 		}
 		inlen = strlen(input);
 		if(inlen == 0)
+		{
+			xfree(input);
 			continue;
+		}
 		if(regexec(&regex, input, nmatch, pmatch, 0)==0)
 		{
 			str = xstrndup(&input[pmatch[1].rm_so], pmatch[1].rm_eo-pmatch[1].rm_so);
@@ -455,6 +458,7 @@ void camlfrontend(int in[2], int out[2], int argc, char *argv[])
 			else
 				putchar(c);
 		}
+		xfree(input);
 	}
 	putchar('\n');
 	mkdir(expand_first("~/.camlsh"));
