@@ -1,2 +1,11 @@
 camlsh
+libreadline.a
+*.o
+*.zo
+*.zi
+*.out
+*.dvi
+*.log
+*.aux
+cl75unix.tar.gz
 cl75
